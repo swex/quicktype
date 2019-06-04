@@ -73,11 +73,11 @@ export const cPlusPlusOptions = {
         "not-permissive",
         "secondary"
     ),
-    westConst : new EnumOption(
-      "const-style",
-      "Put const to the left/west (const T) or right/east (T const)",
-      [["west-const", true], ["east-const", false]],
-      "west-const"
+    westConst: new EnumOption(
+        "const-style",
+        "Put const to the left/west (const T) or right/east (T const)",
+        [["west-const", true], ["east-const", false]],
+        "west-const"
     ),
     justTypes: new BooleanOption("just-types", "Plain types only", false),
     namespace: new StringOption("namespace", "Name of the generated namespace(s)", "NAME", "quicktype"),
@@ -106,7 +106,8 @@ export const cPlusPlusOptions = {
         pascalUpperAcronymsValue,
         camelUpperAcronymsValue
     ]),
-    boost: new BooleanOption("boost", "Require a dependency on boost. Without boost, C++17 is required", true)
+    boost: new BooleanOption("boost", "Require a dependency on boost. Without boost, C++17 is required", true),
+    skipNull: new BooleanOption("skipNull", "Skip null objects in json dump", false)
 };
 
 export class CPlusPlusTargetLanguage extends TargetLanguage {
@@ -128,7 +129,8 @@ export class CPlusPlusTargetLanguage extends TargetLanguage {
             cPlusPlusOptions.memberNamingStyle,
             cPlusPlusOptions.enumeratorNamingStyle,
             cPlusPlusOptions.enumType,
-            cPlusPlusOptions.boost
+            cPlusPlusOptions.boost,
+            cPlusPlusOptions.skipNull
         ];
     }
 
@@ -627,7 +629,7 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         this._gettersAndSettersForPropertyName.set(name, getterAndSetterNames);
         return getterAndSetterNames;
     }
-    
+
     protected withConst(s: Sourcelike): Sourcelike {
         if (this._options.westConst) {
             return ["const ", s];
@@ -649,9 +651,7 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         if (this.leadingComments !== undefined) {
             this.emitCommentLines(this.leadingComments);
         } else if (!this._options.justTypes) {
-            this.emitCommentLines([
-                " To parse this JSON data, first install",
-                "",]);
+            this.emitCommentLines([" To parse this JSON data, first install", ""]);
             if (this._options.boost) {
                 this.emitCommentLines(["     Boost     http://www.boost.org"]);
             }
@@ -816,11 +816,13 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
     }
 
     protected ourQualifier(inJsonNamespace: boolean): Sourcelike {
-        return (inJsonNamespace || this._options.msbuildPermissive) ? [arrayIntercalate("::", this._namespaceNames), "::"] : [];
+        return inJsonNamespace || this._options.msbuildPermissive
+            ? [arrayIntercalate("::", this._namespaceNames), "::"]
+            : [];
     }
 
     protected jsonQualifier(inJsonNamespace: boolean): Sourcelike {
-        return (inJsonNamespace || this._options.msbuildPermissive) ? [] : "nlohmann::";
+        return inJsonNamespace || this._options.msbuildPermissive ? [] : "nlohmann::";
     }
 
     protected variantIndirection(needIndirection: boolean, typeSrc: Sourcelike): Sourcelike {
@@ -1092,16 +1094,22 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
 
             res.set(jsonName, [
                 this.constraintMember(jsonName),
-                 "(",
-                (minMax !== undefined && minMax[0] !== undefined) ? String(minMax[0]) : this._nulloptType,
+                "(",
+                minMax !== undefined && minMax[0] !== undefined ? String(minMax[0]) : this._nulloptType,
                 ", ",
-                (minMax !== undefined && minMax[1] !== undefined) ? String(minMax[1]) : this._nulloptType,
+                minMax !== undefined && minMax[1] !== undefined ? String(minMax[1]) : this._nulloptType,
                 ", ",
-                (minMaxLength !== undefined && minMaxLength[0] !== undefined) ? String(minMaxLength[0]) : this._nulloptType,
+                minMaxLength !== undefined && minMaxLength[0] !== undefined
+                    ? String(minMaxLength[0])
+                    : this._nulloptType,
                 ", ",
-                (minMaxLength !== undefined && minMaxLength[1] !== undefined) ? String(minMaxLength[1]) : this._nulloptType,
+                minMaxLength !== undefined && minMaxLength[1] !== undefined
+                    ? String(minMaxLength[1])
+                    : this._nulloptType,
                 ", ",
-                (pattern === undefined) ? this._nulloptType : [this._stringType.getType(), "(", this._stringType.createStringLiteral([pattern]), ")"],
+                pattern === undefined
+                    ? this._nulloptType
+                    : [this._stringType.getType(), "(", this._stringType.createStringLiteral([pattern]), ")"],
                 ")"
             ]);
         });
@@ -1145,16 +1153,16 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         // Maps need ecoding conversions, since they have a string in the key. Other types don't.
         if (t instanceof MapType && this._stringType !== this.NarrowString) {
             const ourQualifier = this.ourQualifier(true);
-            
-            this.emitLine("void from_json(", this.withConst("json") ," & j, ", ourQualifier, className, " & x);");
+
+            this.emitLine("void from_json(", this.withConst("json"), " & j, ", ourQualifier, className, " & x);");
             this.emitLine("void to_json(json & j, ", this.withConst([ourQualifier, className]), " & x);");
         }
     }
 
     protected emitClassHeaders(className: Name): void {
         const ourQualifier = this.ourQualifier(true);
-        
-        this.emitLine("void from_json(", this.withConst("json")," & j, ", ourQualifier, className, " & x);");
+
+        this.emitLine("void from_json(", this.withConst("json"), " & j, ", ourQualifier, className, " & x);");
         this.emitLine("void to_json(json & j, ", this.withConst([ourQualifier, className]), " & x);");
     }
 
@@ -1167,49 +1175,57 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
 
             this.emitBlock(
                 ["inline void from_json(", this.withConst("json"), " & j, ", ourQualifier, className, "& x)"],
-                false, () => {
-                cppType = this.cppType(
-                    t,
-                    { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                    false,
-                    true
-                );
-                toType = this.cppType(
-                    t,
-                    { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                    false,
-                    false
-                );
+                false,
+                () => {
+                    cppType = this.cppType(
+                        t,
+                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                        false,
+                        true
+                    );
+                    toType = this.cppType(
+                        t,
+                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                        false,
+                        false
+                    );
 
-                this.emitLine([
-                    "x = ",
-                    this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, ["j.get<", cppType, ">()"]),
-                    ";"
-                ]);
-            });
+                    this.emitLine([
+                        "x = ",
+                        this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, [
+                            "j.get<",
+                            cppType,
+                            ">()"
+                        ]),
+                        ";"
+                    ]);
+                }
+            );
 
             this.emitBlock(
                 ["inline void to_json(json & j, ", this.withConst([ourQualifier, className]), " & x)"],
-                false, () => {
-                cppType = this.cppType(
-                    t,
-                    { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                    false,
-                    false
-                );
-                toType = this.cppType(
-                    t,
-                    { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                    false,
-                    true
-                );
+                false,
+                () => {
+                    cppType = this.cppType(
+                        t,
+                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                        false,
+                        false
+                    );
+                    toType = this.cppType(
+                        t,
+                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                        false,
+                        true
+                    );
 
-                this.emitLine([
-                    "j = ",
-                    this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, "x"),
-                    ";"
-                ]);
-            });
+                    this.emitLine([
+                        "j = ",
+                        this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, "x"),
+                        ";"
+                    ]);
+                }
+            );
         }
     }
 
@@ -1219,164 +1235,185 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         let toType: Sourcelike;
 
         this.emitBlock(
-            ["inline void from_json(", this.withConst("json")," & j, ", ourQualifier, className, "& x)"],
-            false, () => {
-            this.forEachClassProperty(c, "none", (name, json, p) => {
-                const [, , setterName] = defined(this._gettersAndSettersForPropertyName.get(name));
-                const t = p.type;
+            ["inline void from_json(", this.withConst("json"), " & j, ", ourQualifier, className, "& x)"],
+            false,
+            () => {
+                this.forEachClassProperty(c, "none", (name, json, p) => {
+                    const [, , setterName] = defined(this._gettersAndSettersForPropertyName.get(name));
+                    const t = p.type;
 
-                let assignment: WrappingCode;
-                if (this._options.codeFormat) {
-                    assignment = new WrappingCode(["x.", setterName, "("], [")"]);
-                } else {
-                    assignment = new WrappingCode(["x.", name, " = "], []);
-                }
+                    let assignment: WrappingCode;
+                    if (this._options.codeFormat) {
+                        assignment = new WrappingCode(["x.", setterName, "("], [")"]);
+                    } else {
+                        assignment = new WrappingCode(["x.", name, " = "], []);
+                    }
 
-                if (t instanceof UnionType) {
-                    const [maybeNull, nonNulls] = removeNullFromUnion(t, true);
-                    if (maybeNull !== null) {
-                        cppType = this.cppTypeInOptional(
-                            nonNulls,
-                            {
-                                needsForwardIndirection: false,
-                                needsOptionalIndirection: false,
-                                inJsonNamespace: true
-                            },
-                            false,
-                            true
-                        );
-                        toType = this.cppTypeInOptional(
-                            nonNulls,
-                            {
-                                needsForwardIndirection: false,
-                                needsOptionalIndirection: false,
-                                inJsonNamespace: true
-                            },
-                            false,
-                            false
-                        );
+                    if (t instanceof UnionType) {
+                        const [maybeNull, nonNulls] = removeNullFromUnion(t, true);
+                        if (maybeNull !== null) {
+                            cppType = this.cppTypeInOptional(
+                                nonNulls,
+                                {
+                                    needsForwardIndirection: false,
+                                    needsOptionalIndirection: false,
+                                    inJsonNamespace: true
+                                },
+                                false,
+                                true
+                            );
+                            toType = this.cppTypeInOptional(
+                                nonNulls,
+                                {
+                                    needsForwardIndirection: false,
+                                    needsOptionalIndirection: false,
+                                    inJsonNamespace: true
+                                },
+                                false,
+                                false
+                            );
+                            this.emitLine(
+                                assignment.wrap(
+                                    [],
+                                    [
+                                        this._stringType.wrapEncodingChange(
+                                            [ourQualifier],
+                                            [optionalType, "<", cppType, ">"],
+                                            [optionalType, "<", toType, ">"],
+                                            [
+                                                ourQualifier,
+                                                "get_optional<",
+                                                cppType,
+                                                ">(j, ",
+                                                this._stringType.wrapEncodingChange(
+                                                    [ourQualifier],
+                                                    this._stringType.getType(),
+                                                    this.NarrowString.getType(),
+                                                    [this._stringType.createStringLiteral([stringEscape(json)])]
+                                                ),
+                                                ")"
+                                            ]
+                                        )
+                                    ]
+                                ),
+                                ";"
+                            );
+                            return;
+                        }
+                    }
+                    if (t.kind === "null" || t.kind === "any") {
                         this.emitLine(
                             assignment.wrap(
                                 [],
                                 [
+                                    ourQualifier,
+                                    "get_untyped(j, ",
                                     this._stringType.wrapEncodingChange(
                                         [ourQualifier],
-                                        [optionalType, "<", cppType, ">"],
-                                        [optionalType, "<", toType, ">"],
-                                        [
-                                            ourQualifier,
-                                            "get_optional<",
-                                            cppType,
-                                            ">(j, ",
-                                            this._stringType.wrapEncodingChange(
-                                                [ourQualifier],
-                                                this._stringType.getType(),
-                                                this.NarrowString.getType(),
-                                                [this._stringType.createStringLiteral([stringEscape(json)])]
-                                            ),
-                                            ")"
-                                        ]
-                                    )
+                                        this._stringType.getType(),
+                                        this.NarrowString.getType(),
+                                        [this._stringType.createStringLiteral([stringEscape(json)])]
+                                    ),
+                                    ")"
                                 ]
                             ),
                             ";"
                         );
                         return;
                     }
-                }
-                if (t.kind === "null" || t.kind === "any") {
+                    cppType = this.cppType(
+                        t,
+                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                        false,
+                        true
+                    );
+                    toType = this.cppType(
+                        t,
+                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                        false,
+                        false
+                    );
                     this.emitLine(
                         assignment.wrap(
                             [],
-                            [
-                                ourQualifier,
-                                "get_untyped(j, ",
+                            this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, [
+                                "j.at(",
                                 this._stringType.wrapEncodingChange(
                                     [ourQualifier],
                                     this._stringType.getType(),
                                     this.NarrowString.getType(),
-                                    [this._stringType.createStringLiteral([stringEscape(json)])]
+                                    this._stringType.createStringLiteral([stringEscape(json)])
                                 ),
-                                ")"
-                            ]
+                                ").get<",
+                                cppType,
+                                ">()"
+                            ])
                         ),
                         ";"
                     );
-                    return;
-                }
-                cppType = this.cppType(
-                    t,
-                    { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                    false,
-                    true
-                );
-                toType = this.cppType(
-                    t,
-                    { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                    false,
-                    false
-                );
-                this.emitLine(
-                    assignment.wrap(
-                        [],
-                        this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, [
-                            "j.at(",
+                });
+            }
+        );
+        this.ensureBlankLine();
+
+        this.emitBlock(
+            ["inline void to_json(json & j, ", this.withConst([ourQualifier, className]), " & x)"],
+            false,
+            () => {
+                this.emitLine("j = json::object();");
+                this.forEachClassProperty(c, "none", (name, json, p) => {
+                    const t = p.type;
+                    cppType = this.cppType(
+                        t,
+                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                        false,
+                        false
+                    );
+                    toType = this.cppType(
+                        t,
+                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                        false,
+                        true
+                    );
+                    const [getterName, ,] = defined(this._gettersAndSettersForPropertyName.get(name));
+                    let getter: Sourcelike[];
+                    if (this._options.codeFormat) {
+                        getter = [getterName, "()"];
+                    } else {
+                        getter = [name];
+                    }
+                    if (this._options.skipNull && cppType.toString().startsWith(optionalType)) {
+                        this.emitLine(
+                            "{auto value = ",
+                            this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, ["x.", getter]),
+                            "; if (value) {",
+                            "j[",
                             this._stringType.wrapEncodingChange(
                                 [ourQualifier],
                                 this._stringType.getType(),
                                 this.NarrowString.getType(),
                                 this._stringType.createStringLiteral([stringEscape(json)])
                             ),
-                            ").get<",
-                            cppType,
-                            ">()"
-                        ])
-                    ),
-                    ";"
-                );
-            });
-        });
-        this.ensureBlankLine();
-        
-        this.emitBlock(
-            ["inline void to_json(json & j, ", this.withConst([ourQualifier, className]), " & x)"],
-            false, () => {
-            this.emitLine("j = json::object();");
-            this.forEachClassProperty(c, "none", (name, json, p) => {
-                const t = p.type;
-                cppType = this.cppType(
-                    t,
-                    { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                    false,
-                    false
-                );
-                toType = this.cppType(
-                    t,
-                    { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                    false,
-                    true
-                );
-                const [getterName, ,] = defined(this._gettersAndSettersForPropertyName.get(name));
-                let getter: Sourcelike[];
-                if (this._options.codeFormat) {
-                    getter = [getterName, "()"];
-                } else {
-                    getter = [name];
-                }
-                this.emitLine(
-                    "j[",
-                    this._stringType.wrapEncodingChange(
-                        [ourQualifier],
-                        this._stringType.getType(),
-                        this.NarrowString.getType(),
-                        this._stringType.createStringLiteral([stringEscape(json)])
-                    ),
-                    "] = ",
-                    this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, ["x.", getter]),
-                    ";"
-                );
-            });
-        });
+                            "] = value;",
+                            "} }"
+                        );
+                    } else {
+                        this.emitLine(
+                            "j[",
+                            this._stringType.wrapEncodingChange(
+                                [ourQualifier],
+                                this._stringType.getType(),
+                                this.NarrowString.getType(),
+                                this._stringType.createStringLiteral([stringEscape(json)])
+                            ),
+                            "] = ",
+                            this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, ["x.", getter]),
+                            ";"
+                        );
+                    }
+                });
+            }
+        );
     }
 
     protected emitEnum(e: EnumType, enumName: Name): void {
@@ -1410,8 +1447,8 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
             false,
             false
         );
-        
-        this.emitLine("void from_json(", this.withConst("json")," & j, ", variantType, " & x);");
+
+        this.emitLine("void from_json(", this.withConst("json"), " & j, ", variantType, " & x);");
         this.emitLine("void to_json(json & j, ", this.withConst(variantType), " & x);");
     }
 
@@ -1438,44 +1475,44 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
 
         this.emitBlock(
             ["inline void from_json(", this.withConst("json"), " & j, ", variantType, " & x)"],
-            false, () => {
-            let onFirst = true;
-            for (const [kind, func] of functionForKind) {
-                const typeForKind = iterableFind(nonNulls, t => t.kind === kind);
-                if (typeForKind === undefined) continue;
-                this.emitLine(onFirst ? "if" : "else if", " (j.", func, "())");
-                this.indent(() => {
-                    const cppType = this.cppType(
-                        typeForKind,
-                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                        false,
-                        true
-                    );
-                    let toType = this.cppType(
-                        typeForKind,
-                        { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
-                        false,
-                        false
-                    );
-                    this.emitLine(
-                        "x = ",
-                        this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, [
-                            "j.get<",
-                            cppType,
-                            ">()"
-                        ]),
-                        ";"
-                    );
-                });
-                onFirst = false;
+            false,
+            () => {
+                let onFirst = true;
+                for (const [kind, func] of functionForKind) {
+                    const typeForKind = iterableFind(nonNulls, t => t.kind === kind);
+                    if (typeForKind === undefined) continue;
+                    this.emitLine(onFirst ? "if" : "else if", " (j.", func, "())");
+                    this.indent(() => {
+                        const cppType = this.cppType(
+                            typeForKind,
+                            { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                            false,
+                            true
+                        );
+                        let toType = this.cppType(
+                            typeForKind,
+                            { needsForwardIndirection: true, needsOptionalIndirection: true, inJsonNamespace: true },
+                            false,
+                            false
+                        );
+                        this.emitLine(
+                            "x = ",
+                            this._stringType.wrapEncodingChange([ourQualifier], cppType, toType, [
+                                "j.get<",
+                                cppType,
+                                ">()"
+                            ]),
+                            ";"
+                        );
+                    });
+                    onFirst = false;
+                }
+                this.emitLine('else throw "Could not deserialize";');
             }
-            this.emitLine('else throw "Could not deserialize";');
-        });
+        );
         this.ensureBlankLine();
-        
-        this.emitBlock(
-            ["inline void to_json(json & j, ", this.withConst(variantType), " & x)"],
-            false, () => {
+
+        this.emitBlock(["inline void to_json(json & j, ", this.withConst(variantType), " & x)"], false, () => {
             this.emitBlock(["switch (x.", this._variantIndexMethodName, "())"], false, () => {
                 let i = 0;
                 for (const t of nonNulls) {
@@ -1521,7 +1558,7 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
 
     protected emitEnumHeaders(enumName: Name): void {
         const ourQualifier = this.ourQualifier(true);
-        
+
         this.emitLine("void from_json(", this.withConst("json"), " & j, ", ourQualifier, enumName, " & x);");
         this.emitLine("void to_json(json & j, ", this.withConst([ourQualifier, enumName]), " & x);");
     }
@@ -1531,56 +1568,60 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
 
         this.emitBlock(
             ["inline void from_json(", this.withConst("json"), " & j, ", ourQualifier, enumName, " & x)"],
-            false, () => {
-            let onFirst = true;
-            this.forEachEnumCase(e, "none", (name, jsonName) => {
-                const maybeElse = onFirst ? "" : "else ";
-                this.emitLine(
-                    maybeElse,
-                    "if (j == ",
-                    this._stringType.wrapEncodingChange(
-                        [ourQualifier],
-                        this._stringType.getType(),
-                        this.NarrowString.getType(),
-                        [this._stringType.createStringLiteral([stringEscape(jsonName)])]
-                    ),
-                    ") x = ",
-                    ourQualifier,
-                    enumName,
-                    "::",
-                    name,
-                    ";"
-                );
-                onFirst = false;
-            });
-            this.emitLine('else throw "Input JSON does not conform to schema";');
-        });
-        this.ensureBlankLine();
-        
-        this.emitBlock(
-            ["inline void to_json(json & j, ", this.withConst([ourQualifier, enumName]), " & x)"],
-            false, () => {
-            this.emitBlock("switch (x)", false, () => {
+            false,
+            () => {
+                let onFirst = true;
                 this.forEachEnumCase(e, "none", (name, jsonName) => {
+                    const maybeElse = onFirst ? "" : "else ";
                     this.emitLine(
-                        "case ",
-                        ourQualifier,
-                        enumName,
-                        "::",
-                        name,
-                        ": j = ",
+                        maybeElse,
+                        "if (j == ",
                         this._stringType.wrapEncodingChange(
                             [ourQualifier],
                             this._stringType.getType(),
                             this.NarrowString.getType(),
                             [this._stringType.createStringLiteral([stringEscape(jsonName)])]
                         ),
-                        "; break;"
+                        ") x = ",
+                        ourQualifier,
+                        enumName,
+                        "::",
+                        name,
+                        ";"
                     );
+                    onFirst = false;
                 });
-                this.emitLine('default: throw "This should not happen";');
-            });
-        });
+                this.emitLine('else throw "Input JSON does not conform to schema";');
+            }
+        );
+        this.ensureBlankLine();
+
+        this.emitBlock(
+            ["inline void to_json(json & j, ", this.withConst([ourQualifier, enumName]), " & x)"],
+            false,
+            () => {
+                this.emitBlock("switch (x)", false, () => {
+                    this.forEachEnumCase(e, "none", (name, jsonName) => {
+                        this.emitLine(
+                            "case ",
+                            ourQualifier,
+                            enumName,
+                            "::",
+                            name,
+                            ": j = ",
+                            this._stringType.wrapEncodingChange(
+                                [ourQualifier],
+                                this._stringType.getType(),
+                                this.NarrowString.getType(),
+                                [this._stringType.createStringLiteral([stringEscape(jsonName)])]
+                            ),
+                            "; break;"
+                        );
+                    });
+                    this.emitLine('default: throw "This should not happen";');
+                });
+            }
+        );
     }
 
     protected emitTopLevelTypedef(t: Type, name: Name): void {
@@ -1637,18 +1678,25 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         this.emitNamespaces(["nlohmann"], () => {
             this.emitLine("template <typename T>");
             this.emitBlock(["struct adl_serializer<", optionalType, "<T>>"], true, () => {
-                
-                this.emitBlock(["static void to_json(json & j, ", this.withConst([optionalType, "<T>"]), " & opt)"], false, () => {
-                    this.emitLine("if (!opt) j = nullptr; else j = *opt;");
-                });
+                this.emitBlock(
+                    ["static void to_json(json & j, ", this.withConst([optionalType, "<T>"]), " & opt)"],
+                    false,
+                    () => {
+                        this.emitLine("if (!opt) j = nullptr; else j = *opt;");
+                    }
+                );
 
                 this.ensureBlankLine();
 
-                this.emitBlock(["static ", optionalType, "<T> from_json(", this.withConst("json"), " & j)"], false, () => {
-                    this.emitLine(
-                        `if (j.is_null()) return std::unique_ptr<T>(); else return std::unique_ptr<T>(new T(j.get<T>()));`
-                    );
-                });
+                this.emitBlock(
+                    ["static ", optionalType, "<T> from_json(", this.withConst("json"), " & j)"],
+                    false,
+                    () => {
+                        this.emitLine(
+                            `if (j.is_null()) return std::unique_ptr<T>(); else return std::unique_ptr<T>(new T(j.get<T>()));`
+                        );
+                    }
+                );
             });
         });
 
@@ -1768,7 +1816,15 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
 
         const checkConst = this.lookupGlobalName(GlobalNames.CheckConstraint);
         this.emitBlock(
-            ["void ", checkConst, "(", this._stringType.getConstType(), " name, ", this.withConst(classConstraint), " & c, int64_t value)"],            
+            [
+                "void ",
+                checkConst,
+                "(",
+                this._stringType.getConstType(),
+                " name, ",
+                this.withConst(classConstraint),
+                " & c, int64_t value)"
+            ],
             false,
             () => {
                 this.emitBlock(
@@ -1825,11 +1881,29 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         this.ensureBlankLine();
 
         this.emitBlock(
-            ["void ", checkConst, "(", this._stringType.getConstType(), " name, ", this.withConst(classConstraint), " & c, ", this._stringType.getConstType(), " value)"],
+            [
+                "void ",
+                checkConst,
+                "(",
+                this._stringType.getConstType(),
+                " name, ",
+                this.withConst(classConstraint),
+                " & c, ",
+                this._stringType.getConstType(),
+                " value)"
+            ],
             false,
             () => {
                 this.emitBlock(
-                    ["if (c.", getterMinLength, "() != ", this._nulloptType, " && value.length() < *c.", getterMinLength, "())"],
+                    [
+                        "if (c.",
+                        getterMinLength,
+                        "() != ",
+                        this._nulloptType,
+                        " && value.length() < *c.",
+                        getterMinLength,
+                        "())"
+                    ],
                     false,
                     () => {
                         this.emitLine(
@@ -1854,7 +1928,15 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
                 this.ensureBlankLine();
 
                 this.emitBlock(
-                    ["if (c.", getterMaxLength, "() != ", this._nulloptType, " && value.length() > *c.", getterMaxLength, "())"],
+                    [
+                        "if (c.",
+                        getterMaxLength,
+                        "() != ",
+                        this._nulloptType,
+                        " && value.length() > *c.",
+                        getterMaxLength,
+                        "())"
+                    ],
                     false,
                     () => {
                         this.emitLine(
@@ -1922,31 +2004,41 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         }
 
         this.emitBlock(
-        [
-            "inline json get_untyped(", this.withConst("json"), " & j, ", this.withConst("char"), " * property)"
-        ], false, () => {
-            this.emitBlock(["if (j.find(property) != j.end())"], false, () => {
-                this.emitLine("return j.at(property).get<json>();");
-            });
-            this.emitLine("return json();");
-        });
+            ["inline json get_untyped(", this.withConst("json"), " & j, ", this.withConst("char"), " * property)"],
+            false,
+            () => {
+                this.emitBlock(["if (j.find(property) != j.end())"], false, () => {
+                    this.emitLine("return j.at(property).get<json>();");
+                });
+                this.emitLine("return json();");
+            }
+        );
 
         this.ensureBlankLine();
 
         this.emitBlock(
-        [
-            "inline json get_untyped(", this.withConst("json"), " & j, std::string property)"
-        ], false, () => {
-            this.emitLine("return get_untyped(j, property.data());");
-        });
+            ["inline json get_untyped(", this.withConst("json"), " & j, std::string property)"],
+            false,
+            () => {
+                this.emitLine("return get_untyped(j, property.data());");
+            }
+        );
 
         this.ensureBlankLine();
 
         if (this.haveUnions) {
             this.emitLine("template <typename T>");
-            
+
             this.emitBlock(
-                ["inline ", optionalType, "<T> get_optional(", this.withConst("json"), " & j, ", this.withConst("char"), " * property)"],
+                [
+                    "inline ",
+                    optionalType,
+                    "<T> get_optional(",
+                    this.withConst("json"),
+                    " & j, ",
+                    this.withConst("char"),
+                    " * property)"
+                ],
                 false,
                 () => {
                     this.emitBlock(["if (j.find(property) != j.end())"], false, () => {
@@ -1959,7 +2051,7 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
             this.ensureBlankLine();
 
             this.emitLine("template <typename T>");
-            
+
             this.emitBlock(
                 ["inline ", optionalType, "<T> get_optional(", this.withConst("json"), " & j, std::string property)"],
                 false,
@@ -1978,7 +2070,7 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         if (this._options.codeFormat) {
             if (this._options.boost) {
                 this.emitInclude(true, `boost/optional.hpp`);
-            }   else {
+            } else {
                 this.emitInclude(true, `optional`);
             }
             this.emitInclude(true, `stdexcept`);
@@ -2366,7 +2458,7 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         return originalType !== newType;
     }
 
-    public NarrowString = new class extends BaseString implements StringType {
+    public NarrowString = new (class extends BaseString implements StringType {
         constructor() {
             super(
                 "std::string",
@@ -2392,9 +2484,9 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
         public emitHelperFunctions(): void {
             return;
         }
-    }();
+    })();
 
-    public WideString = new class extends BaseString implements StringType {
+    public WideString = new (class extends BaseString implements StringType {
         constructor(public superThis: CPlusPlusRenderer) {
             super(
                 "std::wstring",
@@ -2522,16 +2614,16 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
             this.superThis.ensureBlankLine();
 
             this.superThis.emitLine("template<typename T>");
-            this.superThis.emitBlock(
-                ["std::wstring wdump(const T& j)"],
-                false,
-                () => {
-                    this.superThis.emitLine("std::ostringstream s;");
-                    this.superThis.emitLine("s << j;");
-                    this.superThis.emitLine("return ", this.superThis.ourQualifier(false), "Utf16_Utf8<std::string, std::wstring>::convert(s.str()); ");
-                }
-            );
+            this.superThis.emitBlock(["std::wstring wdump(const T& j)"], false, () => {
+                this.superThis.emitLine("std::ostringstream s;");
+                this.superThis.emitLine("s << j;");
+                this.superThis.emitLine(
+                    "return ",
+                    this.superThis.ourQualifier(false),
+                    "Utf16_Utf8<std::string, std::wstring>::convert(s.str()); "
+                );
+            });
             this.superThis.ensureBlankLine();
         }
-    }(this);
+    })(this);
 }
