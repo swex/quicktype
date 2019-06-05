@@ -1394,7 +1394,7 @@ export class CPlusPlusRenderer extends ConvenienceRenderer {
                                 this.NarrowString.getType(),
                                 this._stringType.createStringLiteral([stringEscape(json)])
                             ),
-                            "] = value;",
+                            "] = move(value);",
                             "} }"
                         );
                     } else {
